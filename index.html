@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>A-Puzzle-A-Day Hint Generator</title>
+    <style>
+        :root {
+            --cell-size: min(11vw, 50px);
+            --piece-cell-size: min(4vw, 15px);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #1a1a2e;
+            color: #eee;
+            min-height: 100vh;
+            padding: 12px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 16px;
+            font-size: clamp(1.1rem, 4vw, 1.5rem);
+        }
+        .controls {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 16px;
+            max-width: 400px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+        select, button {
+            padding: 12px 16px;
+            font-size: 16px; /* Prevents iOS zoom on focus */
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            -webkit-appearance: none;
+            appearance: none;
+            touch-action: manipulation;
+        }
+        select {
+            background: #16213e url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23eee' d='M6 8L1 3h10z'/%3E%3C/svg%3E") no-repeat right 12px center;
+            color: #eee;
+            padding-right: 36px;
+            min-height: 48px;
+        }
+        select:focus {
+            outline: 2px solid #e94560;
+            outline-offset: 2px;
+        }
+        button {
+            background: #e94560;
+            color: white;
+            min-height: 48px;
+            font-weight: 600;
+        }
+        button:active { background: #ff6b6b; transform: scale(0.98); }
+        button:disabled { background: #555; cursor: not-allowed; }
+        .status {
+            text-align: center;
+            margin-bottom: 12px;
+            color: #0f0;
+            font-size: clamp(0.8rem, 3vw, 0.9rem);
+            padding: 0 8px;
+            word-wrap: break-word;
+        }
+        .board-container {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 16px;
+            overflow-x: auto;
+        }
+        .board {
+            display: grid;
+            grid-template-columns: repeat(7, var(--cell-size));
+            grid-template-rows: repeat(7, var(--cell-size));
+            gap: 2px;
+            background: #16213e;
+            padding: 3px;
+            border-radius: 8px;
+            touch-action: manipulation;
+        }
+        .cell {
+            background: #0f3460;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: clamp(0.55rem, 2.5vw, 0.75rem);
+            font-weight: bold;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background 0.15s, box-shadow 0.15s;
+            position: relative;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .cell.blocked { background: #1a1a2e; cursor: default; }
+        .cell.target { background: #e94560; color: white; }
+        .cell.highlight {
+            box-shadow: inset 0 0 0 3px #0f0;
+            cursor: pointer;
+        }
+        .cell.highlight:active { background: #0f0; color: #000; }
+        .cell.placed { color: white; font-weight: bold; }
+
+        .pieces-section {
+            margin-bottom: 16px;
+        }
+        .pieces-section h3 {
+            text-align: center;
+            margin-bottom: 10px;
+            font-size: clamp(0.85rem, 3vw, 1rem);
+        }
+        .pieces {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: center;
+            padding: 0 4px;
+        }
+        .piece {
+            display: grid;
+            grid-template-columns: repeat(4, var(--piece-cell-size));
+            grid-template-rows: repeat(4, var(--piece-cell-size));
+            gap: 1px;
+            padding: 6px;
+            background: #16213e;
+            border-radius: 6px;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: border-color 0.15s, box-shadow 0.15s;
+            touch-action: manipulation;
+        }
+        .piece:active { border-color: #e94560; }
+        .piece.selected { border-color: #0f0; box-shadow: 0 0 12px #0f0; }
+        .piece.used { opacity: 0.3; cursor: not-allowed; pointer-events: none; }
+        .piece-cell {
+            border-radius: 2px;
+        }
+        .piece-cell.empty { background: transparent; }
+
+        .instructions {
+            background: #16213e;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: clamp(0.75rem, 2.5vw, 0.85rem);
+            line-height: 1.5;
+        }
+        .instructions h4 { margin-bottom: 8px; }
+        .instructions ol { padding-left: 20px; }
+        .instructions li { margin-bottom: 4px; }
+
+        /* Piece colors */
+        .color-0 { background: #e94560; }
+        .color-1 { background: #f39c12; }
+        .color-2 { background: #2ecc71; }
+        .color-3 { background: #3498db; }
+        .color-4 { background: #9b59b6; }
+        .color-5 { background: #1abc9c; }
+        .color-6 { background: #e74c3c; }
+        .color-7 { background: #f1c40f; }
+
+        /* Larger screens */
+        @media (min-width: 500px) {
+            .controls {
+                display: flex;
+                gap: 10px;
+                justify-content: center;
+                flex-wrap: wrap;
+            }
+            select, button {
+                min-width: 100px;
+            }
+        }
+
+        /* Very small screens */
+        @media (max-width: 360px) {
+            :root {
+                --cell-size: 12vw;
+                --piece-cell-size: 4.5vw;
+            }
+            .pieces {
+                gap: 6px;
+            }
+            .piece {
+                padding: 4px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>A-Puzzle-A-Day Hint Generator</h1>
+
+        <div class="controls">
+            <select id="month"></select>
+            <select id="day"></select>
+            <button id="solve">Find Solutions</button>
+            <button id="reset">Reset</button>
+        </div>
+
+        <div class="status" id="status">Select a date and click "Find Solutions"</div>
+
+        <div class="board-container">
+            <div class="board" id="board"></div>
+        </div>
+
+        <div class="pieces-section">
+            <h3>Click a piece to see valid placements</h3>
+            <div class="pieces" id="pieces"></div>
+        </div>
+
+        <div class="instructions">
+            <h4>How to use:</h4>
+            <ol>
+                <li>Select a month and day, then click "Find Solutions"</li>
+                <li>Click any piece below to see where it can be placed</li>
+                <li>Click a highlighted cell to place the piece there</li>
+                <li>Continue until the puzzle is solved</li>
+            </ol>
+        </div>
+    </div>
+
+<script>
+// Board layout: 7x7 grid
+// Row 0: Jan-Jun, XX
+// Row 1: Jul-Dec, XX
+// Row 2-6: Days 1-31, with XX in bottom-right corner
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+const BOARD_LABELS = [
+    ['Jan','Feb','Mar','Apr','May','Jun','XX'],
+    ['Jul','Aug','Sep','Oct','Nov','Dec','XX'],
+    ['1','2','3','4','5','6','7'],
+    ['8','9','10','11','12','13','14'],
+    ['15','16','17','18','19','20','21'],
+    ['22','23','24','25','26','27','28'],
+    ['29','30','31','XX','XX','XX','XX']
+];
+
+// Blocked cells (XX positions) - these are always unavailable
+const BLOCKED = [[0,6],[1,6],[6,3],[6,4],[6,5],[6,6]];
+
+// Piece definitions as relative coordinates [row, col] from top-left
+// Each piece has a name, base shape, and number of unique orientations
+// Generate all rotations/reflections of a piece shape
+function generateOrientations(baseShape, allowReflect = true) {
+    const orientations = new Set();
+
+    function normalize(shape) {
+        // Sort and shift to origin
+        const sorted = [...shape].sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        const minR = Math.min(...sorted.map(p => p[0]));
+        const minC = Math.min(...sorted.map(p => p[1]));
+        return sorted.map(([r, c]) => [r - minR, c - minC]);
+    }
+
+    function toKey(shape) {
+        return normalize(shape).map(p => p.join(',')).join(';');
+    }
+
+    function rotate90(shape) {
+        // (r, c) -> (c, -r) then normalize
+        return shape.map(([r, c]) => [c, -r]);
+    }
+
+    function reflect(shape) {
+        // (r, c) -> (r, -c)
+        return shape.map(([r, c]) => [r, -c]);
+    }
+
+    let current = baseShape;
+    for (let i = 0; i < 4; i++) {
+        orientations.add(toKey(current));
+        if (allowReflect) {
+            orientations.add(toKey(reflect(current)));
+        }
+        current = rotate90(current);
+    }
+
+    return [...orientations].map(key =>
+        key.split(';').map(p => p.split(',').map(Number))
+    );
+}
+
+// Base piece definitions from DragonFjord A-Puzzle-A-Day
+// Total cells: 6 + 5*7 = 41 (matches 43 board cells - 2 target cells)
+const PIECE_BASES = [
+    // Rectangle: 2x3 block (6 cells) - symmetric, only needs rotation
+    { name: 'Rectangle', base: [[0,0],[0,1],[0,2],[1,0],[1,1],[1,2]], reflect: false },
+    // U/C shape: like letter C (5 cells) - symmetric
+    { name: 'U-shape', base: [[0,0],[0,1],[1,0],[2,0],[2,1]], reflect: false },
+    // Corner: big L shape (5 cells) - symmetric
+    { name: 'Corner', base: [[0,0],[0,1],[0,2],[1,0],[2,0]], reflect: false },
+    // S-shape: staircase over 4 rows (5 cells) - needs reflection
+    { name: 'S-shape', base: [[0,0],[1,0],[1,1],[2,1],[3,1]], reflect: true },
+    // Long L: 4-tall L with foot (5 cells) - needs reflection
+    { name: 'L-shape', base: [[0,0],[1,0],[2,0],[3,0],[3,1]], reflect: true },
+    // Long Z: zigzag over 4 rows (5 cells) - needs reflection
+    { name: 'Z-shape', base: [[0,0],[0,1],[1,1],[2,1],[2,2]], reflect: true },
+    // Uneven T: T with offset stem (5 cells) - needs reflection
+    { name: 'T-shape', base: [[0,0],[0,1],[0,2],[0,3],[1,1]], reflect: true },
+    // P/Six shape: 2x2 with tail (5 cells) - needs reflection
+    { name: 'P-shape', base: [[0,0],[0,1],[1,0],[1,1],[2,0]], reflect: true }
+];
+
+const PIECES = PIECE_BASES.map((p, i) => ({
+    name: p.name,
+    color: i,
+    shapes: generateOrientations(p.base, p.reflect)
+}));
+
+// State
+let solutions = [];
+let filteredSolutions = [];
+let placedPieces = new Map(); // pieceIndex -> {orientation, position}
+let selectedPiece = null;
+let boardState = []; // 7x7 array: null=empty, -1=blocked, -2=target, 0-7=piece index
+
+// Initialize
+function init() {
+    initSelects();
+    initBoard();
+    initPieces();
+    document.getElementById('solve').onclick = solve;
+    document.getElementById('reset').onclick = reset;
+}
+
+function initSelects() {
+    const monthSelect = document.getElementById('month');
+    const daySelect = document.getElementById('day');
+
+    MONTHS.forEach((m, i) => {
+        const opt = document.createElement('option');
+        opt.value = i;
+        opt.textContent = m;
+        monthSelect.appendChild(opt);
+    });
+
+    for (let d = 1; d <= 31; d++) {
+        const opt = document.createElement('option');
+        opt.value = d;
+        opt.textContent = d;
+        daySelect.appendChild(opt);
+    }
+
+    // Default to today
+    const today = new Date();
+    monthSelect.value = today.getMonth();
+    daySelect.value = today.getDate();
+}
+
+function initBoard() {
+    const board = document.getElementById('board');
+    board.innerHTML = '';
+    boardState = [];
+
+    for (let r = 0; r < 7; r++) {
+        boardState[r] = [];
+        for (let c = 0; c < 7; c++) {
+            const cell = document.createElement('div');
+            cell.className = 'cell';
+            cell.dataset.row = r;
+            cell.dataset.col = c;
+            cell.textContent = BOARD_LABELS[r][c];
+
+            if (isBlocked(r, c)) {
+                cell.classList.add('blocked');
+                boardState[r][c] = -1;
+            } else {
+                boardState[r][c] = null;
+                cell.onclick = () => cellClicked(r, c);
+            }
+
+            board.appendChild(cell);
+        }
+    }
+}
+
+function initPieces() {
+    const container = document.getElementById('pieces');
+    container.innerHTML = '';
+
+    PIECES.forEach((piece, idx) => {
+        const div = document.createElement('div');
+        div.className = 'piece';
+        div.dataset.index = idx;
+        div.title = piece.name;
+
+        // Create 4x4 grid for piece display
+        const shape = piece.shapes[0];
+        for (let r = 0; r < 4; r++) {
+            for (let c = 0; c < 4; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'piece-cell';
+                if (shape.some(([pr, pc]) => pr === r && pc === c)) {
+                    cell.classList.add('color-' + piece.color);
+                } else {
+                    cell.classList.add('empty');
+                }
+                div.appendChild(cell);
+            }
+        }
+
+        div.onclick = () => selectPiece(idx);
+        container.appendChild(div);
+    });
+}
+
+function isBlocked(r, c) {
+    return BLOCKED.some(([br, bc]) => br === r && bc === c);
+}
+
+function getTargetCells(month, day) {
+    // Month cell: row 0 for Jan-Jun, row 1 for Jul-Dec
+    const monthRow = month < 6 ? 0 : 1;
+    const monthCol = month % 6;
+
+    // Day cell: rows 2-6, cols 0-6
+    const dayRow = Math.floor((day - 1) / 7) + 2;
+    const dayCol = (day - 1) % 7;
+
+    return [[monthRow, monthCol], [dayRow, dayCol]];
+}
+
+function solve() {
+    const month = parseInt(document.getElementById('month').value);
+    const day = parseInt(document.getElementById('day').value);
+
+    // Validate date
+    const daysInMonth = [31,29,31,30,31,30,31,31,30,31,30,31];
+    if (day > daysInMonth[month]) {
+        setStatus(`${MONTHS[month]} doesn't have ${day} days!`, 'red');
+        return;
+    }
+
+    setStatus('Solving...', '#ff0');
+
+    // Use setTimeout to allow UI to update
+    setTimeout(() => {
+        const startTime = performance.now();
+        solutions = findAllSolutions(month, day);
+        const elapsed = (performance.now() - startTime).toFixed(0);
+
+        if (solutions.length === 0) {
+            setStatus(`No solutions found for ${MONTHS[month]} ${day}`, 'red');
+        } else {
+            setStatus(`Found ${solutions.length} solutions for ${MONTHS[month]} ${day} (${elapsed}ms)`, '#0f0');
+            filteredSolutions = [...solutions];
+            reset(false); // Reset board but keep solutions
+            updateBoard(month, day);
+        }
+    }, 10);
+}
+
+// =============================================================================
+// OPTIMIZED SOLVER using bitmasks and pruning
+// =============================================================================
+
+// Convert (row, col) to bit position in 64-bit mask (0-48, using 7x7 grid)
+function cellToBit(r, c) { return r * 7 + c; }
+
+// Pre-compute bitmasks for each piece orientation at each valid position
+// This is done once at startup for maximum speed
+const PIECE_PLACEMENTS = []; // [pieceIdx][placementIdx] = {mask, row, col, orientation}
+
+function initPiecePlacements() {
+    // Blocked cells mask (always unavailable)
+    let blockedMask = 0n;
+    BLOCKED.forEach(([r, c]) => { blockedMask |= 1n << BigInt(cellToBit(r, c)); });
+
+    for (let pieceIdx = 0; pieceIdx < PIECES.length; pieceIdx++) {
+        const placements = [];
+        const piece = PIECES[pieceIdx];
+
+        for (let oi = 0; oi < piece.shapes.length; oi++) {
+            const shape = piece.shapes[oi];
+
+            // Find bounding box
+            const maxR = Math.max(...shape.map(([r]) => r));
+            const maxC = Math.max(...shape.map(([, c]) => c));
+
+            // Try each valid starting position
+            for (let r = 0; r <= 6 - maxR; r++) {
+                for (let c = 0; c <= 6 - maxC; c++) {
+                    // Create bitmask for this placement
+                    let mask = 0n;
+                    for (const [dr, dc] of shape) {
+                        mask |= 1n << BigInt(cellToBit(r + dr, c + dc));
+                    }
+
+                    // Skip if overlaps blocked cells
+                    if ((mask & blockedMask) === 0n) {
+                        placements.push({ mask, row: r, col: c, orientation: oi });
+                    }
+                }
+            }
+        }
+        PIECE_PLACEMENTS[pieceIdx] = placements;
+    }
+}
+
+// Check if placing a piece creates an isolated region too small for any remaining piece
+function hasIsolatedRegion(board, minPieceSize) {
+    // Find first empty cell
+    let startBit = -1;
+    for (let i = 0; i < 49; i++) {
+        if ((board & (1n << BigInt(i))) === 0n) {
+            startBit = i;
+            break;
+        }
+    }
+    if (startBit === -1) return false; // Board is full
+
+    // Flood fill from first empty cell
+    let visited = 0n;
+    const stack = [startBit];
+    let regionSize = 0;
+
+    while (stack.length > 0) {
+        const bit = stack.pop();
+        if (bit < 0 || bit >= 49) continue;
+        const bitMask = 1n << BigInt(bit);
+        if ((visited & bitMask) !== 0n) continue;
+        if ((board & bitMask) !== 0n) continue;
+
+        visited |= bitMask;
+        regionSize++;
+
+        const r = Math.floor(bit / 7);
+        const c = bit % 7;
+
+        // Add neighbors (up, down, left, right)
+        if (r > 0) stack.push(bit - 7);
+        if (r < 6) stack.push(bit + 7);
+        if (c > 0) stack.push(bit - 1);
+        if (c < 6) stack.push(bit + 1);
+    }
+
+    // Check if there are more empty cells not connected to this region
+    const emptyCount = 49 - countBits(board);
+    if (regionSize < emptyCount) {
+        // There's an isolated region - check if it's too small
+        const isolatedSize = emptyCount - regionSize;
+        return isolatedSize < minPieceSize && isolatedSize > 0;
+    }
+
+    return false;
+}
+
+function countBits(n) {
+    let count = 0;
+    while (n > 0n) {
+        count += Number(n & 1n);
+        n >>= 1n;
+    }
+    return count;
+}
+
+function findAllSolutions(month, day) {
+    // Initialize piece placements if not done
+    if (PIECE_PLACEMENTS.length === 0) {
+        initPiecePlacements();
+    }
+
+    const targets = getTargetCells(month, day);
+    const results = [];
+
+    // Create initial board mask with blocked and target cells marked as occupied
+    let initialBoard = 0n;
+    BLOCKED.forEach(([r, c]) => { initialBoard |= 1n << BigInt(cellToBit(r, c)); });
+    targets.forEach(([r, c]) => { initialBoard |= 1n << BigInt(cellToBit(r, c)); });
+
+    // Pre-filter placements that don't overlap targets for each piece
+    const validPlacements = PIECE_PLACEMENTS.map(placements =>
+        placements.filter(p => (p.mask & initialBoard) === 0n)
+    );
+
+    // Recursive solver with bitmask board state
+    function solve(pieceIdx, board, placement) {
+        if (pieceIdx === 8) {
+            results.push([...placement]);
+            return;
+        }
+
+        // Get minimum piece size for remaining pieces (for pruning)
+        const minPieceSize = pieceIdx < 1 ? 6 : 5;
+
+        for (const p of validPlacements[pieceIdx]) {
+            // Check if placement fits (no overlap with occupied cells)
+            if ((p.mask & board) === 0n) {
+                // Place piece
+                const newBoard = board | p.mask;
+
+                // Pruning: skip if this creates isolated regions too small to fill
+                if (!hasIsolatedRegion(newBoard, minPieceSize)) {
+                    placement.push({ piece: pieceIdx, orientation: p.orientation, row: p.row, col: p.col });
+                    solve(pieceIdx + 1, newBoard, placement);
+                    placement.pop();
+                }
+            }
+        }
+    }
+
+    solve(0, initialBoard, []);
+    return results;
+}
+
+function updateBoard(month, day) {
+    const targets = getTargetCells(month, day);
+    const cells = document.querySelectorAll('.cell');
+
+    cells.forEach(cell => {
+        const r = parseInt(cell.dataset.row);
+        const c = parseInt(cell.dataset.col);
+
+        cell.classList.remove('target', 'highlight');
+        cell.style.background = '';
+
+        if (targets.some(([tr, tc]) => tr === r && tc === c)) {
+            cell.classList.add('target');
+            boardState[r][c] = -2;
+        } else if (!isBlocked(r, c)) {
+            boardState[r][c] = null;
+        }
+    });
+
+    // Redraw placed pieces
+    placedPieces.forEach((placement, pieceIdx) => {
+        const piece = PIECES[pieceIdx];
+        const shape = piece.shapes[placement.orientation];
+        shape.forEach(([dr, dc]) => {
+            const r = placement.row + dr;
+            const c = placement.col + dc;
+            boardState[r][c] = pieceIdx;
+            const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+            if (cell) {
+                cell.style.background = getColor(piece.color);
+            }
+        });
+    });
+
+    updatePiecesUI();
+}
+
+function selectPiece(idx) {
+    if (placedPieces.has(idx)) return;
+    if (filteredSolutions.length === 0) {
+        setStatus('Find solutions first!', 'red');
+        return;
+    }
+
+    // Toggle selection
+    if (selectedPiece === idx) {
+        selectedPiece = null;
+        clearHighlights();
+    } else {
+        selectedPiece = idx;
+        showValidPlacements(idx);
+    }
+
+    updatePiecesUI();
+}
+
+function showValidPlacements(pieceIdx) {
+    clearHighlights();
+
+    // Find all valid positions for this piece among remaining solutions
+    const validPositions = new Set();
+
+    filteredSolutions.forEach(solution => {
+        const placement = solution.find(p => p.piece === pieceIdx);
+        if (placement) {
+            const shape = PIECES[pieceIdx].shapes[placement.orientation];
+            shape.forEach(([dr, dc]) => {
+                validPositions.add(`${placement.row + dr},${placement.col + dc}`);
+            });
+        }
+    });
+
+    // Highlight valid cells
+    validPositions.forEach(pos => {
+        const [r, c] = pos.split(',').map(Number);
+        const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+        if (cell && boardState[r][c] === null) {
+            cell.classList.add('highlight');
+        }
+    });
+}
+
+function clearHighlights() {
+    document.querySelectorAll('.cell.highlight').forEach(cell => {
+        cell.classList.remove('highlight');
+    });
+}
+
+function cellClicked(r, c) {
+    if (selectedPiece === null) return;
+    if (boardState[r][c] !== null) return;
+
+    const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+    if (!cell.classList.contains('highlight')) return;
+
+    // Find valid placement that includes this cell
+    const validPlacements = [];
+
+    filteredSolutions.forEach(solution => {
+        const placement = solution.find(p => p.piece === selectedPiece);
+        if (placement) {
+            const shape = PIECES[selectedPiece].shapes[placement.orientation];
+            if (shape.some(([dr, dc]) => placement.row + dr === r && placement.col + dc === c)) {
+                // Check if all cells of this placement are available
+                const allAvailable = shape.every(([dr, dc]) => {
+                    const pr = placement.row + dr;
+                    const pc = placement.col + dc;
+                    return boardState[pr][pc] === null;
+                });
+                if (allAvailable) {
+                    validPlacements.push(placement);
+                }
+            }
+        }
+    });
+
+    if (validPlacements.length === 0) return;
+
+    // If multiple placements possible, pick first one (could add UI to choose)
+    // Group by orientation+position to find unique placements
+    const unique = new Map();
+    validPlacements.forEach(p => {
+        const key = `${p.orientation},${p.row},${p.col}`;
+        unique.set(key, p);
+    });
+
+    if (unique.size > 1) {
+        // Multiple orientations could place a piece through this cell
+        // For now, just use the first one
+    }
+
+    const placement = validPlacements[0];
+    placePiece(selectedPiece, placement);
+}
+
+function placePiece(pieceIdx, placement) {
+    placedPieces.set(pieceIdx, placement);
+
+    // Update board state and visual
+    const piece = PIECES[pieceIdx];
+    const shape = piece.shapes[placement.orientation];
+    shape.forEach(([dr, dc]) => {
+        const r = placement.row + dr;
+        const c = placement.col + dc;
+        boardState[r][c] = pieceIdx;
+        const cell = document.querySelector(`.cell[data-row="${r}"][data-col="${c}"]`);
+        if (cell) {
+            cell.style.background = getColor(piece.color);
+            cell.classList.add('placed');
+        }
+    });
+
+    // Filter solutions to only those matching this placement
+    filteredSolutions = filteredSolutions.filter(solution => {
+        const p = solution.find(s => s.piece === pieceIdx);
+        return p && p.orientation === placement.orientation &&
+               p.row === placement.row && p.col === placement.col;
+    });
+
+    selectedPiece = null;
+    clearHighlights();
+    updatePiecesUI();
+
+    if (placedPieces.size === 8) {
+        setStatus('Puzzle complete!', '#0f0');
+    } else {
+        setStatus(`${filteredSolutions.length} solutions remaining. ${8 - placedPieces.size} pieces left.`, '#0f0');
+    }
+}
+
+function updatePiecesUI() {
+    document.querySelectorAll('.piece').forEach(div => {
+        const idx = parseInt(div.dataset.index);
+        div.classList.remove('selected', 'used');
+        if (placedPieces.has(idx)) {
+            div.classList.add('used');
+        } else if (selectedPiece === idx) {
+            div.classList.add('selected');
+        }
+    });
+}
+
+function reset(clearSolutions = true) {
+    if (clearSolutions) {
+        solutions = [];
+        filteredSolutions = [];
+        setStatus('Select a date and click "Find Solutions"', '#eee');
+    } else {
+        filteredSolutions = [...solutions];
+        if (solutions.length > 0) {
+            setStatus(`${solutions.length} solutions available`, '#0f0');
+        }
+    }
+
+    placedPieces.clear();
+    selectedPiece = null;
+
+    // Reset board visuals
+    document.querySelectorAll('.cell').forEach(cell => {
+        const r = parseInt(cell.dataset.row);
+        const c = parseInt(cell.dataset.col);
+        cell.classList.remove('highlight', 'placed', 'target');
+        cell.style.background = '';
+        if (!isBlocked(r, c)) {
+            boardState[r][c] = null;
+        }
+    });
+
+    clearHighlights();
+    updatePiecesUI();
+
+    // If we have solutions, update board with targets
+    if (!clearSolutions && solutions.length > 0) {
+        const month = parseInt(document.getElementById('month').value);
+        const day = parseInt(document.getElementById('day').value);
+        updateBoard(month, day);
+    }
+}
+
+function setStatus(msg, color = '#eee') {
+    const status = document.getElementById('status');
+    status.textContent = msg;
+    status.style.color = color;
+}
+
+function getColor(idx) {
+    const colors = ['#e94560','#f39c12','#2ecc71','#3498db','#9b59b6','#1abc9c','#e74c3c','#f1c40f'];
+    return colors[idx % colors.length];
+}
+
+// Start
+init();
+</script>
+</body>
+</html>
